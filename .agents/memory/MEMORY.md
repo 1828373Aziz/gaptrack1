@@ -1,0 +1,1 @@
+- [GapTrack product context](gaptrack-product-context.md) — Distinguish expected GPS gaps from concerning outages; imported MySQL data and real GPS feeds are not available yet.

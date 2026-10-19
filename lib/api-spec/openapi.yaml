@@ -10,6 +10,12 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: shipments
+    description: Shipment tracking
+  - name: zones
+    description: Coverage gap zones
+  - name: analytics
+    description: Dashboard and coverage analytics
 paths:
   /healthz:
     get:
@@ -24,6 +30,132 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [analytics]
+      summary: Get dashboard summary
+      responses:
+        "200":
+          description: Dashboard metrics and recent activity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+  /shipments:
+    get:
+      operationId: listShipments
+      tags: [shipments]
+      summary: List shipments
+      responses:
+        "200":
+          description: All shipments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Shipment"
+    post:
+      operationId: createShipment
+      tags: [shipments]
+      summary: Create a simulated shipment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShipmentInput"
+      responses:
+        "201":
+          description: Shipment created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Shipment"
+        "400":
+          description: Invalid shipment details
+  /shipments/{id}:
+    get:
+      operationId: getShipment
+      tags: [shipments]
+      summary: Get shipment details and tracking analysis
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Shipment with route points and alerts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShipmentDetail"
+        "404":
+          description: Shipment not found
+  /zones:
+    get:
+      operationId: listZones
+      tags: [zones]
+      summary: List coverage zones
+      responses:
+        "200":
+          description: Known coverage gap zones
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CoverageZone"
+    post:
+      operationId: createZone
+      tags: [zones]
+      summary: Add a coverage zone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CoverageZoneInput"
+      responses:
+        "201":
+          description: Zone created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoverageZone"
+        "400":
+          description: Invalid zone coordinates
+  /zones/{id}:
+    delete:
+      operationId: deleteZone
+      tags: [zones]
+      summary: Delete a coverage zone
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Zone deleted
+        "404":
+          description: Zone not found
+  /reports/coverage:
+    get:
+      operationId: getCoverageReport
+      tags: [analytics]
+      summary: Get coverage analytics
+      responses:
+        "200":
+          description: Coverage incidents and zone activity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoverageReport"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +165,145 @@ components:
           type: string
       required:
         - status
+    Shipment:
+      type: object
+      required: [id, trackingCode, origin, destination, transportType, status, createdAt, updateCount, health]
+      properties:
+        id: { type: integer }
+        trackingCode: { type: string }
+        origin: { type: string }
+        destination: { type: string }
+        transportType: { type: string, enum: [land, sea] }
+        status: { type: string, enum: [in_transit, completed] }
+        createdAt: { type: string, format: date-time }
+        lastUpdate: { type: ["string", "null"], format: date-time }
+        lastLocationLat: { type: ["number", "null"] }
+        lastLocationLng: { type: ["number", "null"] }
+        updateCount: { type: integer }
+        health: { type: string, enum: [connected, known_gap, abnormal_gap] }
+    ShipmentInput:
+      type: object
+      required: [origin, destination, transportType, pointsCount]
+      properties:
+        origin: { type: string, minLength: 1 }
+        destination: { type: string, minLength: 1 }
+        transportType: { type: string, enum: [land, sea] }
+        pointsCount: { type: integer, minimum: 3, maximum: 10 }
+    TrackingPoint:
+      type: object
+      required: [id, lat, lng, timestamp, classification, note]
+      properties:
+        id: { type: integer }
+        lat: { type: number }
+        lng: { type: number }
+        timestamp: { type: string, format: date-time }
+        classification: { type: string, enum: [connected, known_gap, abnormal_gap] }
+        note: { type: ["string", "null"] }
+    ShipmentAlert:
+      type: object
+      required: [type, message, timestamp]
+      properties:
+        type: { type: string, enum: [known_gap, abnormal_gap, predictive] }
+        message: { type: string }
+        timestamp: { type: string, format: date-time }
+    PredictiveAlert:
+      type: object
+      required: [zoneName, distanceKm, etaMinutes]
+      properties:
+        zoneName: { type: string }
+        distanceKm: { type: number }
+        etaMinutes: { type: integer }
+    ShipmentDetail:
+      type: object
+      required: [shipment, points, alerts, predictiveAlert]
+      properties:
+        shipment: { $ref: "#/components/schemas/Shipment" }
+        points:
+          type: array
+          items: { $ref: "#/components/schemas/TrackingPoint" }
+        alerts:
+          type: array
+          items: { $ref: "#/components/schemas/ShipmentAlert" }
+        predictiveAlert:
+          oneOf:
+            - $ref: "#/components/schemas/PredictiveAlert"
+            - type: "null"
+    DashboardActivity:
+      type: object
+      required: [id, shipmentId, trackingCode, title, description, severity, timestamp]
+      properties:
+        id: { type: string }
+        shipmentId: { type: integer }
+        trackingCode: { type: string }
+        title: { type: string }
+        description: { type: string }
+        severity: { type: string, enum: [info, warning, danger] }
+        timestamp: { type: string, format: date-time }
+    DashboardSummary:
+      type: object
+      required: [totalShipments, inTransit, knownGaps, abnormalGaps, zoneCount, affectedPoints, recentActivity]
+      properties:
+        totalShipments: { type: integer }
+        inTransit: { type: integer }
+        knownGaps: { type: integer }
+        abnormalGaps: { type: integer }
+        zoneCount: { type: integer }
+        affectedPoints: { type: integer }
+        recentActivity:
+          type: array
+          items: { $ref: "#/components/schemas/DashboardActivity" }
+    CoverageZone:
+      type: object
+      required: [id, name, latMin, latMax, lngMin, lngMax, expectedGapMinutes]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        latMin: { type: number }
+        latMax: { type: number }
+        lngMin: { type: number }
+        lngMax: { type: number }
+        expectedGapMinutes: { type: integer }
+    CoverageZoneInput:
+      type: object
+      required: [name, latMin, latMax, lngMin, lngMax, expectedGapMinutes]
+      properties:
+        name: { type: string, minLength: 2 }
+        latMin: { type: number, minimum: -90, maximum: 90 }
+        latMax: { type: number, minimum: -90, maximum: 90 }
+        lngMin: { type: number, minimum: -180, maximum: 180 }
+        lngMax: { type: number, minimum: -180, maximum: 180 }
+        expectedGapMinutes: { type: integer, minimum: 1, maximum: 1440 }
+    ZoneAnalytics:
+      type: object
+      required: [zone, hitCount, severity]
+      properties:
+        zone: { $ref: "#/components/schemas/CoverageZone" }
+        hitCount: { type: integer }
+        severity: { type: string, enum: [low, medium, high] }
+    CoverageIncident:
+      type: object
+      required: [id, shipmentId, trackingCode, origin, destination, lat, lng, timestamp, gapMinutes]
+      properties:
+        id: { type: integer }
+        shipmentId: { type: integer }
+        trackingCode: { type: string }
+        origin: { type: string }
+        destination: { type: string }
+        lat: { type: number }
+        lng: { type: number }
+        timestamp: { type: string, format: date-time }
+        gapMinutes: { type: integer }
+    CoverageReport:
+      type: object
+      required: [totalAffectedPoints, abnormalCount, knownGapCount, zones, incidents]
+      properties:
+        totalAffectedPoints: { type: integer }
+        abnormalCount: { type: integer }
+        knownGapCount: { type: integer }
+        zones:
+          type: array
+          items: { $ref: "#/components/schemas/ZoneAnalytics" }
+        incidents:
+          type: array
+          items: { $ref: "#/components/schemas/CoverageIncident" }
 

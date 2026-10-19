@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "GapTrack"
+description = "Arabic shipment-tracking and coverage-gap dashboard. Monitor shipments, detect expected and abnormal signal interruptions, forecast weak-coverage zones, and review analytics."
+version = "1.0.0"
+id = "artifacts/gaptrack"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24928
+
+[services.development]
+run = "pnpm --filter @workspace/gaptrack run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/gaptrack", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/gaptrack/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24928"
+BASE_PATH = "/"
