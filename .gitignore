@@ -10,6 +10,8 @@ out-tsc
 
 # dependencies
 node_modules
+/artifacts/gaptrack/data/*.json
+/artifacts/gaptrack/data/*.tmp
 
 # IDEs and editors
 /.idea

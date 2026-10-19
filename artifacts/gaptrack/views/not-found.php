@@ -1,0 +1,1 @@
+<section class="panel empty-panel"><span class="empty-symbol">404</span><h1>الصفحة غير موجودة</h1><p>قد يكون الرابط غير صحيح أو أن الصفحة نُقلت.</p><a class="button button-primary" href="<?= e(page_url('dashboard')) ?>">العودة إلى النظرة العامة</a></section>

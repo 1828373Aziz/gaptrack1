@@ -1,7 +1,7 @@
 kind = "web"
 previewPath = "/"
 title = "GapTrack"
-description = "Arabic shipment-tracking and coverage-gap dashboard. Monitor shipments, detect expected and abnormal signal interruptions, forecast weak-coverage zones, and review analytics."
+description = "منصة ويب عربية لمتابعة الشحنات وتفسير فجوات الإشارة وتحليل مناطق ضعف التغطية."
 version = "1.0.0"
 id = "artifacts/gaptrack"
 router = "path"
@@ -12,17 +12,11 @@ paths = [ "/" ]
 localPort = 24928
 
 [services.development]
-run = "pnpm --filter @workspace/gaptrack run dev"
+run = "php -S 0.0.0.0:$PORT -t public"
 
 [services.production]
-build = [ "pnpm", "--filter", "@workspace/gaptrack", "run", "build" ]
-serve = "static"
-publicDir = "artifacts/gaptrack/dist/public"
-
-[[services.production.rewrites]]
-from = "/*"
-to = "/index.html"
+build = [ "php", "scripts/check.php" ]
+run = "php -S 0.0.0.0:$PORT -t public"
 
 [services.env]
 PORT = "24928"
-BASE_PATH = "/"
