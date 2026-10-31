@@ -7,6 +7,8 @@ GapTrack is a cooperative-training proposal prototype for shipment tracking. It 
 
 The user wants the running GapTrack website implemented in HTML, PHP, CSS, and JavaScript rather than React/TypeScript.
 
+An exported phpMyAdmin dump for the original database is available. It comes from local XAMPP MariaDB 10.4.32 on `127.0.0.1:3308` and includes shipment, coverage-zone, tracking-update, and alert tables; it does not provide a remotely reachable database host.
+
 **Why:** The supplied files contain PHP page source but no original MySQL export/schema or live GPS provider details. The current version therefore demonstrates those flows with clearly labeled sample records.
 
-**How to apply:** Keep new GapTrack website behavior in HTML, PHP, CSS, and JavaScript. Keep product language focused on decision support. Never describe sample records as live operations data; only import historical data or claim real-time tracking after the source database/provider has been supplied and connected.
+**How to apply:** Keep new GapTrack website behavior in HTML, PHP, CSS, and JavaScript. Use the dump to map the eventual MySQL integration, but do not treat its loopback host as available to Replit. Keep product language focused on decision support. Never describe sample records as live operations data; only claim real-time tracking after a database/provider is connected.
