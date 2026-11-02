@@ -11,10 +11,22 @@ if (!in_array($page, $allowedPages, true)) {
     $page = 'not-found';
 }
 
-$data = load_data();
+try {
+    $data = load_data();
+} catch (Throwable $exception) {
+    http_response_code(503);
+    $storageErrorMessage = $exception instanceof RuntimeException
+        ? $exception->getMessage()
+        : 'تعذر تحميل بيانات GapTrack. تحقق من إعداد قاعدة البيانات ثم حاول مرة أخرى.';
+    error_log('GapTrack data load failed: ' . $exception->getMessage());
+    require __DIR__ . '/../views/storage-error.php';
+    exit;
+}
+$storageMode = storage_mode();
 $errorMessage = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    try {
     if (!verify_csrf_token($_POST['csrf_token'] ?? null)) {
         http_response_code(403);
         $errorMessage = 'انتهت صلاحية النموذج. حدّث الصفحة وحاول مرة أخرى.';
@@ -66,9 +78,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'created_at' => date(DATE_ATOM, $now),
                     'points' => $points,
                 ];
-                $data['shipments'][] = $shipment;
-                $data['next_shipment_id'] = $id + 1;
-                save_data($data);
+                if ($storageMode === 'mysql') {
+                    $id = create_mysql_shipment($shipment, $data['zones']);
+                } else {
+                    $data['shipments'][] = $shipment;
+                    $data['next_shipment_id'] = $id + 1;
+                    save_data($data);
+                }
                 header('Location: ' . page_url('shipment', ['id' => $id, 'created' => '1']));
                 exit;
             }
@@ -90,7 +106,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errorMessage = 'مدة الانقطاع المتوقعة يجب أن تكون بين دقيقة واحدة و24 ساعة.';
             } else {
                 $id = (int)$data['next_zone_id'];
-                $data['zones'][] = [
+                $zone = [
                     'id' => $id,
                     'name' => $name,
                     'lat_min' => (float)$latMin,
@@ -99,8 +115,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'lng_max' => (float)$lngMax,
                     'expected_gap_minutes' => (int)$expectedGap,
                 ];
-                $data['next_zone_id'] = $id + 1;
-                save_data($data);
+                if ($storageMode === 'mysql') {
+                    $id = create_mysql_zone($zone);
+                } else {
+                    $zone['id'] = $id;
+                    $data['zones'][] = $zone;
+                    $data['next_zone_id'] = $id + 1;
+                    save_data($data);
+                }
                 header('Location: ' . page_url('zones', ['saved' => '1']));
                 exit;
             }
@@ -117,14 +139,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($id === false || !$zoneExists) {
                 $errorMessage = 'المنطقة المطلوبة غير موجودة.';
             } else {
-                $data['zones'] = array_values(array_filter(
-                    $data['zones'],
-                    static fn(array $zone): bool => (int)$zone['id'] !== (int)$id,
-                ));
-                save_data($data);
-                header('Location: ' . page_url('zones', ['deleted' => '1']));
-                exit;
+                if ($storageMode === 'mysql') {
+                    if (!delete_mysql_zone((int)$id)) {
+                        $errorMessage = 'المنطقة المطلوبة لم تعد موجودة.';
+                        $page = 'zones';
+                    }
+                } else {
+                    $data['zones'] = array_values(array_filter(
+                        $data['zones'],
+                        static fn(array $zone): bool => (int)$zone['id'] !== (int)$id,
+                    ));
+                    save_data($data);
+                }
+                if ($errorMessage !== '') {
+                    $page = 'zones';
+                } else {
+                    header('Location: ' . page_url('zones', ['deleted' => '1']));
+                    exit;
+                }
             }
+            $page = 'zones';
+        }
+    }
+    } catch (Throwable $exception) {
+        error_log('GapTrack request failed: ' . $exception->getMessage());
+        http_response_code(503);
+        $errorMessage = $exception instanceof RuntimeException
+            ? $exception->getMessage()
+            : 'تعذر حفظ التغيير. تحقق من اتصال قاعدة البيانات وحاول مرة أخرى.';
+        if (isset($action) && $action === 'create_shipment') {
+            $page = 'shipments';
+        } elseif (isset($action) && in_array($action, ['create_zone', 'delete_zone'], true)) {
             $page = 'zones';
         }
     }

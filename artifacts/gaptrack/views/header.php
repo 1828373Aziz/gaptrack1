@@ -22,14 +22,14 @@
       <a class="<?= $page === 'about' ? 'active' : '' ?>" href="<?= e(page_url('about')) ?>"><span class="nav-symbol">?</span><span>عن GapTrack</span></a>
     </nav>
     <div class="sidebar-bottom">
-      <div class="system-status"><span class="online-dot"></span><div><small>حالة النظام</small><b>نسخة عرض تجريبية</b></div><span class="status-check">●</span></div>
+       <div class="system-status"><span class="online-dot"></span><div><small>حالة النظام</small><b><?= $storageMode === 'mysql' ? 'قاعدة MySQL محلية' : 'نسخة عرض تجريبية' ?></b></div><span class="status-check">●</span></div>
       <div class="profile-row"><span class="avatar">ع</span><span><b>فريق العمليات</b><small>مركز التحكم</small></span><span class="pill-arrow">⌄</span></div>
     </div>
   </aside>
   <main class="main-area">
     <header class="topbar">
       <div class="breadcrumb"><span><?= e($pageTitles[$page] ?? 'GapTrack') ?></span><span class="crumb-sep">‹</span><span>GapTrack</span></div>
-      <div class="topbar-meta"><span class="demo-label"><i></i> بيانات تجريبية</span><span class="today-label"><?= e(arabic_today()) ?></span><span class="avatar avatar-small">ع</span></div>
+       <div class="topbar-meta"><span class="demo-label"><i></i> <?= $storageMode === 'mysql' ? 'قاعدة MySQL' : 'بيانات تجريبية' ?></span><span class="today-label"><?= e(arabic_today()) ?></span><span class="avatar avatar-small">ع</span></div>
       <button class="mobile-menu" type="button" aria-label="فتح القائمة" data-menu-toggle>☰</button>
     </header>
     <div class="page-container">

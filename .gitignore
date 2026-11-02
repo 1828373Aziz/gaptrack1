@@ -12,6 +12,8 @@ out-tsc
 node_modules
 /artifacts/gaptrack/data/*.json
 /artifacts/gaptrack/data/*.tmp
+/artifacts/gaptrack/config.local.php
+/generated-artifacts/
 
 # IDEs and editors
 /.idea

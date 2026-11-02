@@ -64,7 +64,7 @@ $cityLabels = [
         <?php endforeach; ?>
       </svg>
     </div>
-    <div class="heatmap-legend"><span><i class="warning"></i> منطقة ضعف معروفة</span><span><i class="danger"></i> انقطاع غير متوقع</span><small>البيانات الحالية تجريبية</small></div>
+    <div class="heatmap-legend"><span><i class="warning"></i> منطقة ضعف معروفة</span><span><i class="danger"></i> انقطاع غير متوقع</span><small><?= $storageMode === 'mysql' ? 'مبني على سجلات قاعدة MySQL' : 'البيانات الحالية تجريبية' ?></small></div>
   <?php else: ?><div class="empty-state"><b>لا توجد نقاط انقطاع بعد</b><p>ستظهر الخريطة بعد تسجيل نقاط تتبع متأثرة.</p></div><?php endif; ?>
 </section>
 

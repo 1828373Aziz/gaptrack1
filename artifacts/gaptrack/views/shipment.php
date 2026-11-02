@@ -9,7 +9,32 @@ else:
   $points = classify_points($shipment, $data['zones']);
   $health = shipment_health($shipment, $data['zones']);
   $predictive = predictive_alert($shipment, $data['zones']);
-  $alerts = array_values(array_filter($points, static fn(array $point): bool => in_array($point['classification'], ['known_gap', 'abnormal_gap'], true)));
+  $storedAlerts = array_values(array_filter(
+      $data['alerts'] ?? [],
+      static fn(array $alert): bool => (int)$alert['shipment_id'] === (int)$shipment['id'],
+  ));
+  if ($storedAlerts) {
+      $alerts = array_map(static function (array $alert): array {
+          $classification = match ($alert['alert_type']) {
+              'gap_zone_entry' => 'known_gap',
+              'abnormal_gap' => 'abnormal_gap',
+              default => 'connected',
+          };
+          return [
+              'classification' => $classification,
+              'label' => match ($alert['alert_type']) {
+                  'gap_zone_entry' => 'فجوة متوقعة',
+                  'abnormal_gap' => 'انقطاع مقلق',
+                  'delivered' => 'تم التسليم',
+                  default => 'تنبيه مسجل',
+              },
+              'note' => $alert['message'],
+              'time' => $alert['created_at'],
+          ];
+      }, $storedAlerts);
+  } else {
+      $alerts = array_values(array_filter($points, static fn(array $point): bool => in_array($point['classification'], ['known_gap', 'abnormal_gap'], true)));
+  }
   if ($predictive !== null) {
       array_unshift($alerts, [
           'classification' => 'predictive',
@@ -89,8 +114,8 @@ else:
       <div class="panel-heading"><div><p class="eyebrow">قراءة الإشارة</p><h2>التنبيهات</h2></div><span class="count-tag"><?= number_format(count($alerts), 0, '.', '٬') ?></span></div>
       <?php if ($alerts): ?>
         <div class="alert-list">
-          <?php foreach ($alerts as $alert): $kind = $alert['classification']; $kindClass = $kind === 'predictive' ? 'predictive' : classification_class($kind); ?>
-            <article class="alert-item <?= e($kindClass) ?>"><span class="alert-symbol"><?= $kind === 'predictive' ? '↗' : ($kind === 'abnormal_gap' ? '!' : '▥') ?></span><div><b><?= e($kind === 'predictive' ? 'تنبيه استباقي' : classification_label($kind)) ?></b><p><?= e($alert['note']) ?></p><time><?= e(format_time($alert['time'], 'j/n/Y · H:i')) ?></time></div></article>
+          <?php foreach ($alerts as $alert): $kind = $alert['classification']; $kindClass = $kind === 'predictive' ? 'predictive' : classification_class($kind); $alertTitle = $alert['label'] ?? ($kind === 'predictive' ? 'تنبيه استباقي' : classification_label($kind)); ?>
+            <article class="alert-item <?= e($kindClass) ?>"><span class="alert-symbol"><?= $kind === 'predictive' ? '↗' : ($kind === 'abnormal_gap' ? '!' : '▥') ?></span><div><b><?= e($alertTitle) ?></b><p><?= e($alert['note']) ?></p><time><?= e(format_time($alert['time'], 'j/n/Y · H:i')) ?></time></div></article>
           <?php endforeach; ?>
         </div>
       <?php else: ?><div class="empty-state"><b>لا توجد تنبيهات</b><p>حالة الإشارة مستقرة حتى الآن.</p></div><?php endif; ?>
@@ -98,7 +123,7 @@ else:
   </div>
 
   <section class="panel points-panel">
-    <div class="panel-heading"><div><p class="eyebrow">سجل المواقع</p><h2>نقاط التتبع <span class="count-tag"><?= number_format(count($points), 0, '.', '٬') ?></span></h2></div><span class="panel-description">التصنيف يعتمد على مناطق العرض التجريبية وفاصل زمني افتراضي قدره ٩٠ دقيقة.</span></div>
+      <div class="panel-heading"><div><p class="eyebrow">سجل المواقع</p><h2>نقاط التتبع <span class="count-tag"><?= number_format(count($points), 0, '.', '٬') ?></span></h2></div><span class="panel-description">التصنيف يعتمد على مناطق التغطية المسجلة وفاصل زمني افتراضي قدره ٩٠ دقيقة.</span></div>
     <?php if ($points): ?>
       <div class="table-scroll"><table class="data-table"><thead><tr><th>التصنيف</th><th>الموقع</th><th>الملاحظة</th><th>التوقيت</th><th></th></tr></thead><tbody>
         <?php foreach ($points as $index => $point): ?>

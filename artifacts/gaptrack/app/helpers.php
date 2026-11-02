@@ -4,6 +4,271 @@ declare(strict_types=1);
 date_default_timezone_set('Asia/Riyadh');
 
 const GAPTRACK_DATA_FILE = __DIR__ . '/../data/gaptrack-demo.json';
+const GAPTRACK_LOCAL_CONFIG_FILE = __DIR__ . '/../config.local.php';
+
+function database_config(): ?array
+{
+    static $loaded = false;
+    static $config = null;
+    if ($loaded) {
+        return $config;
+    }
+
+    $envHost = getenv('GAPTRACK_DB_HOST');
+    if ($envHost !== false && $envHost !== '') {
+        $config = [
+            'host' => $envHost,
+            'port' => getenv('GAPTRACK_DB_PORT') ?: 3306,
+            'database' => getenv('GAPTRACK_DB_NAME') ?: 'gaptrack',
+            'username' => getenv('GAPTRACK_DB_USER') ?: 'root',
+            'password' => getenv('GAPTRACK_DB_PASS') ?: '',
+        ];
+    } elseif (is_file(GAPTRACK_LOCAL_CONFIG_FILE)) {
+        $config = require GAPTRACK_LOCAL_CONFIG_FILE;
+        if (!is_array($config)) {
+            throw new RuntimeException('إعداد قاعدة البيانات المحلية غير صالح. راجع config.local.php.');
+        }
+    } else {
+        $config = null;
+    }
+
+    $loaded = true;
+    if ($config !== null) {
+        $port = filter_var($config['port'] ?? 3306, FILTER_VALIDATE_INT);
+        $host = trim((string)($config['host'] ?? ''));
+        $database = trim((string)($config['database'] ?? ''));
+        $username = (string)($config['username'] ?? '');
+        if ($host === '' || $database === '' || $username === '' || $port === false || $port < 1 || $port > 65535
+            || !preg_match('/^[a-zA-Z0-9_]+$/', $database)) {
+            throw new RuntimeException('إعداد قاعدة البيانات المحلية غير مكتمل أو غير صالح. راجع config.local.php.');
+        }
+        $config['host'] = $host;
+        $config['port'] = $port;
+        $config['database'] = $database;
+        $config['username'] = $username;
+        $config['password'] = (string)($config['password'] ?? '');
+    }
+
+    return $config;
+}
+
+function storage_mode(): string
+{
+    return database_config() === null ? 'demo' : 'mysql';
+}
+
+function database_connection(): PDO
+{
+    static $connection = null;
+    if ($connection instanceof PDO) {
+        return $connection;
+    }
+
+    $config = database_config();
+    if ($config === null) {
+        throw new RuntimeException('قاعدة MySQL غير مهيأة. أنشئ config.local.php من ملف المثال أولًا.');
+    }
+
+    $dsn = sprintf(
+        'mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4',
+        $config['host'],
+        $config['port'],
+        $config['database'],
+    );
+    try {
+        $connection = new PDO($dsn, $config['username'], $config['password'], [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            PDO::ATTR_EMULATE_PREPARES => false,
+        ]);
+        return $connection;
+    } catch (PDOException $exception) {
+        error_log('GapTrack MySQL connection failed: ' . $exception->getMessage());
+        throw new RuntimeException('تعذر الاتصال بقاعدة MySQL. تحقق من تشغيل MySQL والمنفذ وبيانات الاتصال في config.local.php.');
+    }
+}
+
+function mysql_datetime(string $value): string
+{
+    return (new DateTimeImmutable($value))
+        ->setTimezone(new DateTimeZone('Asia/Riyadh'))
+        ->format('Y-m-d H:i:s');
+}
+
+function load_mysql_data(): array
+{
+    $pdo = database_connection();
+    $zones = [];
+    foreach ($pdo->query('SELECT id, zone_name, lat_min, lat_max, lng_min, lng_max, expected_gap_minutes FROM coverage_gap_zones ORDER BY id') as $row) {
+        $zones[] = [
+            'id' => (int)$row['id'],
+            'name' => (string)$row['zone_name'],
+            'lat_min' => (float)$row['lat_min'],
+            'lat_max' => (float)$row['lat_max'],
+            'lng_min' => (float)$row['lng_min'],
+            'lng_max' => (float)$row['lng_max'],
+            'expected_gap_minutes' => (int)$row['expected_gap_minutes'],
+        ];
+    }
+
+    $pointsByShipment = [];
+    foreach ($pdo->query('SELECT id, shipment_id, lat, lng, `timestamp`, connection_status FROM tracking_updates ORDER BY `timestamp`, id') as $row) {
+        $shipmentId = (int)$row['shipment_id'];
+        $pointsByShipment[$shipmentId][] = [
+            'id' => (int)$row['id'],
+            'lat' => (float)$row['lat'],
+            'lng' => (float)$row['lng'],
+            'time' => (string)$row['timestamp'],
+            'connection_status' => (string)$row['connection_status'],
+        ];
+    }
+
+    $shipments = [];
+    foreach ($pdo->query('SELECT id, origin, destination, type, status, created_at FROM shipments ORDER BY created_at DESC, id DESC') as $row) {
+        $id = (int)$row['id'];
+        $shipments[] = [
+            'id' => $id,
+            'tracking_code' => 'GT-' . str_pad((string)$id, 4, '0', STR_PAD_LEFT),
+            'origin' => (string)$row['origin'],
+            'destination' => (string)$row['destination'],
+            'type' => (string)$row['type'],
+            'status' => (string)$row['status'],
+            'created_at' => (string)$row['created_at'],
+            'points' => $pointsByShipment[$id] ?? [],
+        ];
+    }
+
+    $alerts = [];
+    foreach ($pdo->query('SELECT id, shipment_id, alert_type, message, created_at FROM alerts ORDER BY created_at DESC, id DESC') as $row) {
+        $alerts[] = [
+            'id' => (int)$row['id'],
+            'shipment_id' => (int)$row['shipment_id'],
+            'alert_type' => (string)$row['alert_type'],
+            'message' => (string)$row['message'],
+            'created_at' => (string)$row['created_at'],
+        ];
+    }
+
+    $nextShipmentId = (int)$pdo->query('SELECT COALESCE(MAX(id), 0) + 1 FROM shipments')->fetchColumn();
+    $nextZoneId = (int)$pdo->query('SELECT COALESCE(MAX(id), 0) + 1 FROM coverage_gap_zones')->fetchColumn();
+    return [
+        'demo' => false,
+        'next_shipment_id' => $nextShipmentId,
+        'next_zone_id' => $nextZoneId,
+        'zones' => $zones,
+        'shipments' => $shipments,
+        'alerts' => $alerts,
+    ];
+}
+
+function create_mysql_shipment(array $shipment, array $zones): int
+{
+    $pdo = database_connection();
+    try {
+        $pdo->beginTransaction();
+        $insertShipment = $pdo->prepare(
+            'INSERT INTO shipments (origin, destination, type, status, created_at) VALUES (:origin, :destination, :type, :status, :created_at)'
+        );
+        $insertShipment->execute([
+            'origin' => $shipment['origin'],
+            'destination' => $shipment['destination'],
+            'type' => $shipment['type'],
+            'status' => $shipment['status'],
+            'created_at' => mysql_datetime($shipment['created_at']),
+        ]);
+        $shipmentId = (int)$pdo->lastInsertId();
+
+        $classifiedPoints = classify_points($shipment, $zones);
+        $insertPoint = $pdo->prepare(
+            'INSERT INTO tracking_updates (shipment_id, lat, lng, `timestamp`, connection_status) VALUES (:shipment_id, :lat, :lng, :timestamp, :connection_status)'
+        );
+        $insertAlert = $pdo->prepare(
+            'INSERT INTO alerts (shipment_id, alert_type, message, created_at) VALUES (:shipment_id, :alert_type, :message, :created_at)'
+        );
+        $previousClassification = 'connected';
+        foreach ($classifiedPoints as $point) {
+            $classification = (string)$point['classification'];
+            $connectionStatus = match ($classification) {
+                'known_gap' => 'gap_zone',
+                'abnormal_gap' => 'abnormal_gap',
+                default => 'connected',
+            };
+            $insertPoint->execute([
+                'shipment_id' => $shipmentId,
+                'lat' => $point['lat'],
+                'lng' => $point['lng'],
+                'timestamp' => mysql_datetime((string)$point['time']),
+                'connection_status' => $connectionStatus,
+            ]);
+
+            if ($classification === 'abnormal_gap') {
+                $insertAlert->execute([
+                    'shipment_id' => $shipmentId,
+                    'alert_type' => 'abnormal_gap',
+                    'message' => 'تنبيه: الشحنة رقم ' . $shipmentId . ' — ' . (string)$point['note'],
+                    'created_at' => mysql_datetime((string)$point['time']),
+                ]);
+            } elseif ($classification === 'known_gap' && $previousClassification !== 'known_gap') {
+                $zoneName = 'منطقة تغطية معروفة';
+                foreach ($zones as $zone) {
+                    if (point_in_zone((float)$point['lat'], (float)$point['lng'], $zone)) {
+                        $zoneName = (string)$zone['name'];
+                        break;
+                    }
+                }
+                $insertAlert->execute([
+                    'shipment_id' => $shipmentId,
+                    'alert_type' => 'gap_zone_entry',
+                    'message' => 'الشحنة رقم ' . $shipmentId . ' دخلت منطقة "' . $zoneName . '".',
+                    'created_at' => mysql_datetime((string)$point['time']),
+                ]);
+            }
+            $previousClassification = $classification;
+        }
+
+        $pdo->commit();
+        return $shipmentId;
+    } catch (Throwable $exception) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_log('GapTrack shipment write failed: ' . $exception->getMessage());
+        throw new RuntimeException('تعذر حفظ الشحنة في قاعدة MySQL. تحقق من الجداول والاتصال ثم حاول مرة أخرى.');
+    }
+}
+
+function create_mysql_zone(array $zone): int
+{
+    try {
+        $statement = database_connection()->prepare(
+            'INSERT INTO coverage_gap_zones (zone_name, lat_min, lat_max, lng_min, lng_max, expected_gap_minutes) VALUES (:zone_name, :lat_min, :lat_max, :lng_min, :lng_max, :expected_gap_minutes)'
+        );
+        $statement->execute([
+            'zone_name' => $zone['name'],
+            'lat_min' => $zone['lat_min'],
+            'lat_max' => $zone['lat_max'],
+            'lng_min' => $zone['lng_min'],
+            'lng_max' => $zone['lng_max'],
+            'expected_gap_minutes' => $zone['expected_gap_minutes'],
+        ]);
+        return (int)database_connection()->lastInsertId();
+    } catch (Throwable $exception) {
+        error_log('GapTrack zone write failed: ' . $exception->getMessage());
+        throw new RuntimeException('تعذر حفظ منطقة التغطية في قاعدة MySQL. تحقق من الاتصال ثم حاول مرة أخرى.');
+    }
+}
+
+function delete_mysql_zone(int $id): bool
+{
+    try {
+        $statement = database_connection()->prepare('DELETE FROM coverage_gap_zones WHERE id = :id');
+        $statement->execute(['id' => $id]);
+        return $statement->rowCount() > 0;
+    } catch (Throwable $exception) {
+        error_log('GapTrack zone delete failed: ' . $exception->getMessage());
+        throw new RuntimeException('تعذر حذف منطقة التغطية من قاعدة MySQL. تحقق من الاتصال ثم حاول مرة أخرى.');
+    }
+}
 
 function e(mixed $value): string
 {
@@ -114,6 +379,9 @@ function sample_data(): array
 
 function save_data(array $data): void
 {
+    if (storage_mode() !== 'demo') {
+        throw new RuntimeException('الحفظ المباشر لملف العرض معطل عند استخدام قاعدة MySQL.');
+    }
     $directory = dirname(GAPTRACK_DATA_FILE);
     if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
         throw new RuntimeException('تعذر إنشاء مجلد بيانات العرض.');
@@ -135,6 +403,14 @@ function save_data(array $data): void
 }
 
 function load_data(): array
+{
+    if (storage_mode() === 'mysql') {
+        return load_mysql_data();
+    }
+    return load_demo_data();
+}
+
+function load_demo_data(): array
 {
     if (!is_file(GAPTRACK_DATA_FILE)) {
         $initial = sample_data();

@@ -81,6 +81,6 @@ usort($recentShipments, static fn(array $a, array $b): int => strtotime($b['crea
       <?php endforeach; ?>
       <?php if (!$recentShipments): ?><div class="empty-state"><b>لا توجد شحنات بعد</b><p>أضف شحنة جديدة لبدء عرض المسارات.</p><a class="text-link" href="<?= e(page_url('shipments')) ?>">إضافة شحنة ←</a></div><?php endif; ?>
     </div>
-    <div class="fleet-footer"><span class="online-dot"></span> البيانات الحالية للعرض التجريبي فقط</div>
+    <div class="fleet-footer"><span class="online-dot"></span> <?= $storageMode === 'mysql' ? 'سجلات محفوظة في قاعدة MySQL المحلية' : 'البيانات الحالية للعرض التجريبي فقط' ?></div>
   </section>
 </div>
