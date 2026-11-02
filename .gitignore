@@ -13,6 +13,7 @@ node_modules
 /artifacts/gaptrack/data/*.json
 /artifacts/gaptrack/data/*.tmp
 /artifacts/gaptrack/config.local.php
+/artifacts/gaptrack/gaptrack-xampp-ready.zip
 /generated-artifacts/
 
 # IDEs and editors
